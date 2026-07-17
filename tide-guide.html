@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tide Guide</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #1c2733; padding: 14px; min-height: 100vh;
+    /* underwater frame (NOAA squid school, public domain); scaled to fill,
+       no tiling. Gradient stands in where external images are blocked
+       (e.g. inside the Claude artifact view). */
+    background: linear-gradient(180deg, #2e5f74 0%, #1f4a5e 55%, #16394b 100%);
+    background-image:
+      url("https://images.unsplash.com/photo-1562742263-531a89b31c78?fm=jpg&q=55&w=1400&fit=max"),
+      linear-gradient(180deg, #2e5f74 0%, #1f4a5e 55%, #16394b 100%);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; }
+  .panel {
+    background: rgba(255,255,255,0.93);
+    border: 1px solid rgba(255,255,255,0.6);
+    border-radius: 12px; padding: 10px; margin-bottom: 10px;
+    box-shadow: 0 2px 10px rgba(30,40,60,0.18);
+  }
+  .panel header, .panel .daterow { margin-bottom: 0; }
+  .panel header { margin-bottom: 8px; }
+  header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+  h1 { font-size: 17px; font-weight: 700; flex: 1 1 auto; }
+  h1 small { display: block; font-size: 12px; font-weight: 400; color: #5b6b7b; }
+  select, input[type=text], input[type=date] {
+    font-size: 14px; padding: 7px 9px; border: 1px solid #c6d2dd; border-radius: 8px; background: #fff;
+  }
+  select { max-width: 100%; }
+  .searchrow { position: relative; display: flex; gap: 6px; flex: 1 1 100%; }
+  .searchrow input { flex: 1; }
+  .daterow { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+  .daterow input[type=date] { flex: 0 1 auto; }
+  #results {
+    position: absolute; top: 38px; left: 0; right: 0; z-index: 10;
+    background: #fff; border: 1px solid #c6d2dd; border-radius: 8px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.12); overflow: hidden; display: none;
+  }
+  #results div { padding: 8px 10px; font-size: 13px; cursor: pointer; border-bottom: 1px solid #eef2f6; }
+  #results div:hover { background: #eaf3fb; }
+  .card {
+    background: #fff; border: 1px solid #dde5ec; border-radius: 12px; padding: 8px;
+    box-shadow: 0 2px 10px rgba(30,40,60,0.18);
+  }
+  svg { display: block; width: 100%; height: auto; }
+  #footerinfo { margin-top: 10px; font-size: 14.5px; line-height: 1.75; padding: 2px 6px; }
+  #footerinfo b { font-weight: 600; }
+  .err { color: #a33; padding: 14px 6px; font-size: 14px; }
+  .muted { color: #5b6b7b; font-size: 11.5px; margin-top: 8px; text-align: center; }
+  button.fav {
+    font-size: 13px; padding: 7px 10px; border: 1px solid #c6d2dd; border-radius: 8px;
+    background: #fff; cursor: pointer; white-space: nowrap;
+  }
+  button.fav:active { background: #eaf3fb; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="panel">
+  <header>
+    <h1 id="title">Tide Guide<small id="subtitle">loading…</small></h1>
+    <select id="favsel" aria-label="Favorite locations"></select>
+    <div class="searchrow">
+      <input type="text" id="q" placeholder="Search any NOAA tide station…" autocomplete="off">
+      <button class="fav" id="savefav" title="Save current station to favorites">☆ Save</button>
+      <div id="results"></div>
+    </div>
+  </header>
+  <div class="daterow">
+    <button class="fav" id="prevday" title="Previous day">‹</button>
+    <input type="date" id="datepick" aria-label="Choose date">
+    <button class="fav" id="nextday" title="Next day">›</button>
+    <button class="fav" id="todaybtn">Today</button>
+  </div>
+  </div>
+  <div class="card"><div id="chart"><div class="err">Loading tide data…</div></div></div>
+  <div class="panel" style="margin-top:10px">
+    <div id="footerinfo"></div>
+    <div class="muted">Data: NOAA CO-OPS predictions (MLLW, feet, station local time). Sun &amp; moon computed for station location.<br>Frame photo: NOAA / Unsplash (public domain)</div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ---------- state ---------- */
+const DEFAULT_FAVS = [
+  { id: "9449211", name: "Bellingham, WA",              lat: 48.745,  lon: -122.495 },
+  { id: "9446484", name: "Tacoma, WA",                  lat: 47.2667, lon: -122.4133 },
+  { id: "9443090", name: "Neah Bay, WA",                lat: 48.3707, lon: -124.6016 },
+  { id: "9435380", name: "Newport, OR (South Beach)",   lat: 44.6254, lon: -124.0449 },
+  { id: "9446969", name: "Olympia, WA (Budd Inlet)",    lat: 47.06,   lon: -122.903 }
+];
+/* NOAA stations with live water-temperature sensors (verified) */
+const TEMP_SENSORS = [
+  { id: "9443090", name: "Neah Bay",             lat: 48.3707, lon: -124.6016 },
+  { id: "9444090", name: "Port Angeles",         lat: 48.125,  lon: -123.44 },
+  { id: "9444900", name: "Port Townsend",        lat: 48.1112, lon: -122.7597 },
+  { id: "9446484", name: "Tacoma",               lat: 47.2667, lon: -122.4133 },
+  { id: "9435380", name: "Newport (South Beach)",lat: 44.6254, lon: -124.0449 }
+];
+let favs = loadLS("tg_favs2", DEFAULT_FAVS);
+let station = loadLS("tg_station", DEFAULT_FAVS[0]);
+let viewDate = noonOf(new Date());   // date being displayed (anchored at noon)
+let followToday = true;              // auto-roll to the new day at midnight
+let hilo = [], curve = [], loadedDate = "";
+let tempInfo = null;                 // line 1: { v, src, at?, mi? } or "none"
+let tempInfo2 = null;                // line 2: closest NOAA sensor { v, at, mi }
+
+function loadLS(k, fallback) {
+  try { const v = JSON.parse(localStorage.getItem(k)); return v || fallback; }
+  catch (e) { return fallback; }
+}
+function saveLS(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+function noonOf(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0); }
+function isViewingToday() { return ymd(viewDate) === ymd(new Date()); }
+
+/* ---------- data fetching (artifact vs plain browser) ---------- */
+async function fetchJSON(url) {
+  let text;
+  if (window.cowork && window.cowork.callMcpTool) {
+    const r = await window.cowork.callMcpTool("mcp__workspace__web_fetch", { url: url });
+    if (r.isError) throw new Error("fetch failed");
+    text = (r.content && r.content[0] && r.content[0].text) || "";
+  } else {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    text = await resp.text();
+  }
+  const i = text.indexOf("{");
+  if (i < 0) throw new Error("no JSON in response");
+  return JSON.parse(text.slice(i));
+}
+
+/* ---------- NOAA urls ---------- */
+function ymd(d) {
+  return d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0");
+}
+function predURL(stId, d1, d2, interval) {
+  return "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?product=predictions" +
+    "&application=jay_tide_guide&datum=MLLW&time_zone=lst_ldt&units=english&format=json" +
+    "&station=" + stId + "&begin_date=" + ymd(d1) + "&end_date=" + ymd(d2) +
+    (interval ? "&interval=" + interval : "");
+}
+function tempURL(stId) {
+  return "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?product=water_temperature" +
+    "&application=jay_tide_guide&date=latest&station=" + stId +
+    "&time_zone=lst_ldt&units=english&format=json";
+}
+function searchURL(q) {
+  return "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/tidepredstations.json?q=" + encodeURIComponent(q);
+}
+
+/* ---------- parse "YYYY-MM-DD HH:MM" (station local wall time) ---------- */
+function parseT(t) {
+  const m = t.match(/(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/);
+  return { date: m[1] + "-" + m[2] + "-" + m[3], h: (+m[4]) + (+m[5]) / 60,
+           dt: new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5]) };
+}
+function fmtTime(dt) {
+  let h = dt.getHours(), m = dt.getMinutes(), ap = h >= 12 ? "PM" : "AM";
+  h = h % 12 || 12;
+  return h + ":" + String(m).padStart(2, "0") + " " + ap;
+}
+
+/* ---------- sun (SunCalc-style NOAA algorithm) ---------- */
+const RAD = Math.PI / 180, DAYMS = 864e5, J1970 = 2440588, J2000 = 2451545, EOBL = RAD * 23.4397;
+function sunTimes(date, lat, lng) {
+  const toDays = d => d.valueOf() / DAYMS - 0.5 + J1970 - J2000;
+  const fromJ = j => new Date((j + 0.5 - J1970) * DAYMS);
+  const lw = RAD * -lng, phi = RAD * lat, d = toDays(date);
+  const n = Math.round(d - 0.0009 - lw / (2 * Math.PI));
+  const approx = (Ht) => 0.0009 + (Ht + lw) / (2 * Math.PI) + n;
+  const ds = approx(0);
+  const M = RAD * (357.5291 + 0.98560028 * ds);
+  const L = M + RAD * (1.9148 * Math.sin(M) + 0.02 * Math.sin(2 * M) + 0.0003 * Math.sin(3 * M)) + RAD * 102.9372 + Math.PI;
+  const dec = Math.asin(Math.sin(L) * Math.sin(EOBL));
+  const transitJ = ds2 => J2000 + ds2 + 0.0053 * Math.sin(M) - 0.0069 * Math.sin(2 * L);
+  const Jnoon = transitJ(ds);
+  const cosw = (Math.sin(RAD * -0.833) - Math.sin(phi) * Math.sin(dec)) / (Math.cos(phi) * Math.cos(dec));
+  if (cosw < -1 || cosw > 1) return null; // polar day/night
+  const w = Math.acos(cosw);
+  const Jset = transitJ(approx(w));
+  return { sunrise: fromJ(Jnoon - (Jset - Jnoon)), sunset: fromJ(Jset) };
+}
+
+/* ---------- moon ---------- */
+function moonPhase(date) {
+  const SYN = 29.530588853;
+  let age = ((date.valueOf() - Date.UTC(2000, 0, 6, 18, 14)) / DAYMS) % SYN;
+  if (age < 0) age += SYN;
+  const names = ["New Moon 🌑", "Waxing Crescent 🌒", "First Quarter 🌓", "Waxing Gibbous 🌔",
+                 "Full Moon 🌕", "Waning Gibbous 🌖", "Last Quarter 🌗", "Waning Crescent 🌘"];
+  const idx = Math.round(age / SYN * 8) % 8;
+  const illum = Math.round((1 - Math.cos(2 * Math.PI * age / SYN)) / 2 * 100);
+  return names[idx] + " (" + illum + "% lit)";
+}
+
+/* ---------- distance (miles) ---------- */
+function miles(lat1, lon1, lat2, lon2) {
+  const R = 3958.8, dLat = RAD * (lat2 - lat1), dLon = RAD * (lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(RAD * lat1) * Math.cos(RAD * lat2) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/* ---------- water temperature (current conditions) ----------
+   Order: 1) NOAA sensor at the station (real measurement)
+          2) satellite/model sea-surface temp for the exact coordinates
+             (Open-Meteo marine — same kind of gridded SST seatemperature.org shows)
+          3) nearest NOAA sensor within 60 miles                     */
+function sstURL(lat, lon) {
+  return "https://marine-api.open-meteo.com/v1/marine?latitude=" + lat + "&longitude=" + lon +
+    "&current=sea_surface_temperature&temperature_unit=fahrenheit&timezone=auto";
+}
+async function loadTemp() {
+  tempInfo = null; tempInfo2 = null;
+  const tryStation = async (id) => {
+    const d = await fetchJSON(tempURL(id));
+    if (d.data && d.data[0] && d.data[0].v !== undefined) return d;
+    throw new Error("no temp");
+  };
+  const ranked = TEMP_SENSORS
+    .map(s => ({ ...s, mi: miles(station.lat, station.lon, s.lat, s.lon) }))
+    .sort((a, b) => a.mi - b.mi);
+  let usedSensorId = null;
+  try {
+    const d = await tryStation(station.id);
+    tempInfo = { v: +d.data[0].v, src: "station" };
+    usedSensorId = station.id;
+  } catch (e) {
+    try {
+      const d = await fetchJSON(sstURL(station.lat, station.lon));
+      const v = d.current && d.current.sea_surface_temperature;
+      if (v === null || v === undefined) throw new Error("no sst");
+      tempInfo = { v: +v, src: "sat" };
+    } catch (e1) {
+      const near = ranked.find(s => s.id !== station.id && s.mi <= 60);
+      if (near) {
+        try {
+          const d = await tryStation(near.id);
+          tempInfo = { v: +d.data[0].v, src: "near", at: near.name, mi: Math.round(near.mi) };
+          usedSensorId = near.id;
+        } catch (e2) { tempInfo = "none"; }
+      } else { tempInfo = "none"; }
+    }
+  }
+  drawFooter(); // show line 1 immediately
+  // second line: closest NOAA sensor not already shown above (within 100 mi)
+  const cand = ranked.find(s => s.id !== usedSensorId && s.mi <= 100);
+  if (cand) {
+    try {
+      const d = await tryStation(cand.id);
+      tempInfo2 = { v: +d.data[0].v, at: cand.name, mi: Math.round(cand.mi) };
+    } catch (e3) { tempInfo2 = null; }
+  }
+  drawFooter();
+}
+
+/* ---------- load & render ---------- */
+async function loadAll() {
+  document.getElementById("subtitle").textContent = station.name + " — loading…";
+  const day = noonOf(viewDate);
+  const before = new Date(day); before.setDate(day.getDate() - 1);
+  const after = new Date(day); after.setDate(day.getDate() + 1);
+  try {
+    const hiloData = await fetchJSON(predURL(station.id, before, after, "hilo"));
+    hilo = (hiloData.predictions || []).map(p => ({ ...parseT(p.t), v: +p.v, type: p.type }));
+    curve = [];
+    try {
+      const c = await fetchJSON(predURL(station.id, day, day, ""));
+      curve = (c.predictions || []).map(p => ({ ...parseT(p.t), v: +p.v }));
+    } catch (e) { /* fall back to cosine interpolation below */ }
+    if (!curve.length) curve = cosineCurve(day);
+    loadedDate = ymd(day);
+    render();
+    loadTemp(); // async; updates footer when it arrives
+  } catch (e) {
+    document.getElementById("chart").innerHTML =
+      '<div class="err">Couldn\'t reach NOAA (' + e.message + "). Check connection and reload.</div>";
+  }
+}
+
+/* cosine interpolation between highs/lows — used if 6-min data unavailable */
+function cosineCurve(day) {
+  const dstr = day.getFullYear() + "-" + String(day.getMonth() + 1).padStart(2, "0") + "-" + String(day.getDate()).padStart(2, "0");
+  const pts = [];
+  for (let i = 0; i < hilo.length - 1; i++) {
+    const a = hilo[i], b = hilo[i + 1];
+    for (let f = 0; f <= 1; f += 0.05) {
+      const t = new Date(a.dt.valueOf() + f * (b.dt.valueOf() - a.dt.valueOf()));
+      const v = a.v + (b.v - a.v) * (1 - Math.cos(Math.PI * f)) / 2;
+      const ds = t.getFullYear() + "-" + String(t.getMonth() + 1).padStart(2, "0") + "-" + String(t.getDate()).padStart(2, "0");
+      if (ds === dstr) pts.push({ date: ds, h: t.getHours() + t.getMinutes() / 60, dt: t, v: v });
+    }
+  }
+  return pts;
+}
+
+function render() {
+  const now = new Date();
+  const W = 720, H = 380, ML = 44, MR = 14, MT = 16, MB = 34;
+  const PW = W - ML - MR, PH = H - MT - MB;
+  const vals = curve.map(p => p.v);
+  const ymin = Math.floor(Math.min(...vals) - 0.8), ymax = Math.ceil(Math.max(...vals) + 0.8);
+  const X = h => ML + h / 24 * PW;
+  const Y = v => MT + (ymax - v) / (ymax - ymin) * PH;
+  let s = '<svg viewBox="0 0 ' + W + " " + H + '" xmlns="http://www.w3.org/2000/svg">';
+  s += '<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">' +
+       '<stop offset="0%" stop-color="#4a90c4" stop-opacity="0.75"/>' +
+       '<stop offset="100%" stop-color="#4a90c4" stop-opacity="0.25"/></linearGradient></defs>';
+  // horizontal grid + left labels (feet) — every 2 ft
+  for (let v = Math.ceil(ymin / 2) * 2; v <= ymax; v += 2) {
+    s += '<line x1="' + ML + '" y1="' + Y(v) + '" x2="' + (W - MR) + '" y2="' + Y(v) + '" stroke="#dbe4ec" stroke-width="1"/>';
+    s += '<text x="' + (ML - 7) + '" y="' + (Y(v) + 4) + '" font-size="12" fill="#5b6b7b" text-anchor="end">' + v + "'</text>";
+  }
+  // 1-ft swim reference line (dashed orange)
+  if (ymin < 1 && 1 < ymax) {
+    s += '<line x1="' + ML + '" y1="' + Y(1) + '" x2="' + (W - MR) + '" y2="' + Y(1) + '" stroke="#e67e22" stroke-width="1.5" stroke-dasharray="6 4"/>';
+    s += '<text x="' + (W - MR - 4) + '" y="' + (Y(1) - 5) + '" font-size="11" font-weight="600" fill="#e67e22" text-anchor="end">1\'</text>';
+  }
+  // vertical grid + bottom labels (time) — every 2 hours
+  for (let h = 0; h <= 24; h += 2) {
+    const lbl = (h % 24 === 0) ? "12AM" : (h === 12 ? "12PM" : String(h % 12));
+    s += '<line x1="' + X(h) + '" y1="' + MT + '" x2="' + X(h) + '" y2="' + (H - MB) + '" stroke="#dbe4ec" stroke-width="1"/>';
+    s += '<text x="' + X(h) + '" y="' + (H - MB + 18) + '" font-size="12" fill="#5b6b7b" text-anchor="middle">' + lbl + "</text>";
+  }
+  // tide area + line
+  let path = "", area = "M" + X(curve[0].h) + " " + Y(ymin);
+  curve.forEach((p, i) => {
+    const pt = X(p.h).toFixed(1) + " " + Y(p.v).toFixed(1);
+    path += (i ? "L" : "M") + pt; area += "L" + pt;
+  });
+  area += "L" + X(curve[curve.length - 1].h) + " " + Y(ymin) + "Z";
+  s += '<path d="' + area + '" fill="url(#g)"/>';
+  s += '<path d="' + path + '" fill="none" stroke="#2c6ea0" stroke-width="2.5"/>';
+  // high/low markers for the viewed day
+  const dstr = loadedDateDash();
+  hilo.filter(p => p.date === dstr).forEach(p => {
+    const above = p.type === "H";
+    s += '<circle cx="' + X(p.h) + '" cy="' + Y(p.v) + '" r="3.5" fill="#2c6ea0"/>';
+    s += '<text x="' + X(p.h) + '" y="' + (Y(p.v) + (above ? -20 : 16)) + '" font-size="12" font-weight="600" fill="#1c2733" text-anchor="middle">' + p.v.toFixed(1) + "'</text>";
+    s += '<text x="' + X(p.h) + '" y="' + (Y(p.v) + (above ? -8 : 28)) + '" font-size="11" fill="#5b6b7b" text-anchor="middle">' + fmtTime(p.dt) + "</text>";
+  });
+  // red now-line (only when viewing today)
+  if (ymd(now) === loadedDate) {
+    const nh = now.getHours() + now.getMinutes() / 60;
+    let nv = null;
+    for (let i = 0; i < curve.length - 1; i++) {
+      if (curve[i].h <= nh && nh <= curve[i + 1].h) {
+        const f = (nh - curve[i].h) / (curve[i + 1].h - curve[i].h || 1);
+        nv = curve[i].v + f * (curve[i + 1].v - curve[i].v); break;
+      }
+    }
+    s += '<line x1="' + X(nh) + '" y1="' + MT + '" x2="' + X(nh) + '" y2="' + (H - MB) + '" stroke="#d63031" stroke-width="2.5"/>';
+    if (nv !== null) {
+      s += '<circle cx="' + X(nh) + '" cy="' + Y(nv) + '" r="5" fill="#d63031" stroke="#fff" stroke-width="1.5"/>';
+      s += '<text x="' + (X(nh) + (nh > 20 ? -8 : 8)) + '" y="' + (MT + 14) + '" font-size="12.5" font-weight="700" fill="#d63031" text-anchor="' + (nh > 20 ? "end" : "start") + '">Now ' + nv.toFixed(1) + "'</text>";
+    }
+  }
+  s += "</svg>";
+  document.getElementById("chart").innerHTML = s;
+
+  // header + date picker
+  document.getElementById("title").childNodes[0].textContent = station.name;
+  document.getElementById("subtitle").textContent =
+    viewDate.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" }) +
+    (isViewingToday() ? " (today)" : "");
+  document.getElementById("datepick").value =
+    viewDate.getFullYear() + "-" + String(viewDate.getMonth() + 1).padStart(2, "0") + "-" + String(viewDate.getDate()).padStart(2, "0");
+  drawFooter();
+}
+
+function drawFooter() {
+  const now = new Date();
+  const dstr = loadedDateDash();
+  const sun = sunTimes(noonOf(viewDate), station.lat, station.lon);
+  let f = "";
+  if (isViewingToday()) {
+    const nextL = hilo.find(p => p.type === "L" && p.dt > now);
+    const nextH = hilo.find(p => p.type === "H" && p.dt > now);
+    if (nextL) f += "<b>Next low tide:</b> " + nextL.v.toFixed(1) + " ft at " + fmtTime(nextL.dt) + (nextL.date !== dstr ? " (tomorrow)" : "") + "<br>";
+    if (nextH) f += "<b>Next high tide:</b> " + nextH.v.toFixed(1) + " ft at " + fmtTime(nextH.dt) + (nextH.date !== dstr ? " (tomorrow)" : "") + "<br>";
+  } else {
+    const lows = hilo.filter(p => p.date === dstr && p.type === "L");
+    const highs = hilo.filter(p => p.date === dstr && p.type === "H");
+    if (lows.length) f += "<b>Low tides:</b> " + lows.map(p => p.v.toFixed(1) + " ft at " + fmtTime(p.dt)).join(" · ") + "<br>";
+    if (highs.length) f += "<b>High tides:</b> " + highs.map(p => p.v.toFixed(1) + " ft at " + fmtTime(p.dt)).join(" · ") + "<br>";
+  }
+  if (sun) f += "<b>Sunrise:</b> " + fmtTime(sun.sunrise) + " &nbsp;·&nbsp; <b>Sunset:</b> " + fmtTime(sun.sunset) + "<br>";
+  f += "<b>Moon:</b> " + moonPhase(noonOf(viewDate)) + "<br>";
+  if (tempInfo === null) {
+    f += "<b>Water temp:</b> …";
+  } else if (tempInfo === "none") {
+    f += "<b>Water temp:</b> unavailable for this location";
+  } else {
+    const note = tempInfo.src === "station" ? "measured at station"
+      : tempInfo.src === "sat" ? "satellite estimate for this spot"
+      : "nearest sensor: " + tempInfo.at + ", ~" + tempInfo.mi + " mi";
+    f += "<b>Water temp now:</b> " + tempInfo.v.toFixed(1) + " °F <span style='color:#5b6b7b'>(" + note + ")</span>";
+  }
+  if (tempInfo2) {
+    f += "<br><b>Closest NOAA sensor:</b> " + tempInfo2.v.toFixed(1) + " °F <span style='color:#5b6b7b'>(" + tempInfo2.at + ", ~" + tempInfo2.mi + " mi)</span>";
+  }
+  document.getElementById("footerinfo").innerHTML = f;
+}
+function loadedDateDash() {
+  return loadedDate.slice(0, 4) + "-" + loadedDate.slice(4, 6) + "-" + loadedDate.slice(6, 8);
+}
+
+/* ---------- date navigation ---------- */
+function shiftDay(n) {
+  const d = new Date(viewDate); d.setDate(d.getDate() + n);
+  viewDate = noonOf(d);
+  followToday = isViewingToday();
+  loadAll();
+}
+document.getElementById("prevday").addEventListener("click", () => shiftDay(-1));
+document.getElementById("nextday").addEventListener("click", () => shiftDay(1));
+document.getElementById("todaybtn").addEventListener("click", () => {
+  viewDate = noonOf(new Date()); followToday = true; loadAll();
+});
+document.getElementById("datepick").addEventListener("change", e => {
+  const m = e.target.value.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (m) { viewDate = new Date(+m[1], m[2] - 1, +m[3], 12, 0); followToday = isViewingToday(); loadAll(); }
+});
+
+/* ---------- favorites & search UI ---------- */
+function drawFavs() {
+  const sel = document.getElementById("favsel");
+  sel.innerHTML = favs.map(f =>
+    '<option value="' + f.id + '"' + (f.id === station.id ? " selected" : "") + ">" + f.name + "</option>").join("");
+  if (!favs.some(f => f.id === station.id)) {
+    sel.insertAdjacentHTML("afterbegin", '<option value="' + station.id + '" selected>' + station.name + "</option>");
+  }
+}
+document.getElementById("favsel").addEventListener("change", e => {
+  const f = favs.find(x => x.id === e.target.value);
+  if (f) { station = f; saveLS("tg_station", station); loadAll(); }
+});
+document.getElementById("savefav").addEventListener("click", () => {
+  if (!favs.some(f => f.id === station.id)) {
+    favs.push({ ...station }); saveLS("tg_favs2", favs); drawFavs();
+  }
+});
+let debounce = null;
+document.getElementById("q").addEventListener("input", e => {
+  clearTimeout(debounce);
+  const q = e.target.value.trim();
+  const box = document.getElementById("results");
+  if (q.length < 3) { box.style.display = "none"; return; }
+  debounce = setTimeout(async () => {
+    try {
+      const data = await fetchJSON(searchURL(q));
+      const list = (data.stationList || []).slice(0, 8);
+      box.innerHTML = list.length
+        ? list.map((st, i) => '<div data-i="' + i + '">' + (st.etidesStnName || st.stationName) + ", " + st.state + "</div>").join("")
+        : "<div>No stations found</div>";
+      box.style.display = "block";
+      box.querySelectorAll("div[data-i]").forEach(el => el.addEventListener("click", () => {
+        const st = list[+el.dataset.i];
+        station = { id: st.stationId, name: (st.etidesStnName || st.stationName) + ", " + st.state, lat: +st.lat, lon: +st.lon };
+        saveLS("tg_station", station);
+        box.style.display = "none";
+        document.getElementById("q").value = "";
+        drawFavs(); loadAll();
+      }));
+    } catch (err) { box.innerHTML = "<div>Search failed — try again</div>"; box.style.display = "block"; }
+  }, 450);
+});
+document.addEventListener("click", e => {
+  if (!e.target.closest(".searchrow")) document.getElementById("results").style.display = "none";
+});
+
+/* ---------- keep the red line current ---------- */
+setInterval(() => {
+  if (!curve.length) return;
+  if (followToday && !isViewingToday()) {          // midnight rolled over
+    viewDate = noonOf(new Date()); loadAll();
+  } else if (isViewingToday()) {
+    render();                                       // move the red line
+  }
+}, 60000);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && followToday && loadedDate && ymd(new Date()) !== loadedDate) {
+    viewDate = noonOf(new Date()); loadAll();
+  }
+});
+
+drawFavs();
+loadAll();
+</script>
+</body>
+</html>
