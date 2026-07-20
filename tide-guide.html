@@ -271,21 +271,32 @@ async function loadAll() {
   const day = noonOf(viewDate);
   const before = new Date(day); before.setDate(day.getDate() - 1);
   const after = new Date(day); after.setDate(day.getDate() + 1);
+  loadedDate = ymd(day);
   try {
     const hiloData = await fetchJSON(predURL(station.id, before, after, "hilo"));
+    if (hiloData.error) throw new Error("NOAA says: " + hiloData.error.message);
     hilo = (hiloData.predictions || []).map(p => ({ ...parseT(p.t), v: +p.v, type: p.type }));
+    if (!hilo.length) throw new Error("NOAA returned no tide data for this date");
     curve = [];
     try {
       const c = await fetchJSON(predURL(station.id, day, day, ""));
       curve = (c.predictions || []).map(p => ({ ...parseT(p.t), v: +p.v }));
     } catch (e) { /* fall back to cosine interpolation below */ }
     if (!curve.length) curve = cosineCurve(day);
-    loadedDate = ymd(day);
+    if (!curve.length) throw new Error("no plottable tide points for this date");
     render();
     loadTemp(); // async; updates footer when it arrives
   } catch (e) {
+    hilo = []; curve = [];
     document.getElementById("chart").innerHTML =
-      '<div class="err">Couldn\'t reach NOAA (' + e.message + "). Check connection and reload.</div>";
+      '<div class="err"><b>No tide data for this date.</b><br>' + e.message +
+      '<br><span style="color:#5b6b7b">This is usually a temporary NOAA service outage — ' +
+      'try the ‹ arrow for an earlier date, or retry in a while.</span><br><br>' +
+      '<button class="fav" onclick="loadAll()">↻ Retry</button></div>';
+    document.getElementById("subtitle").textContent =
+      station.name + " — " + viewDate.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+    drawFooter();  // sunrise/sunset/moon still work — they're computed locally
+    loadTemp();    // water temp may still work — different NOAA system + satellite
   }
 }
 
@@ -306,6 +317,7 @@ function cosineCurve(day) {
 }
 
 function render() {
+  if (!curve.length) return; // nothing plottable; loadAll shows the message
   const now = new Date();
   const W = 720, H = 380, ML = 44, MR = 14, MT = 16, MB = 34;
   const PW = W - ML - MR, PH = H - MT - MB;
