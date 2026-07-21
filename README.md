@@ -18,7 +18,7 @@ A simple, interactive web-based tide prediction tool for NOAA tide stations with
 1. Open `tide-guide.html` in any modern web browser
 2. Search for your favorite NOAA tide station
 3. Save it to your favorites for quick access
-4. View tide predictions, water temperature, and celestial data
+4. View tide predictions, water temperature, wind speed/direction and celestial data
 5. Navigate between dates or jump to today's tides
 
 ## Data Sources
