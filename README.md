@@ -31,12 +31,12 @@ fresh data every time you open it.
   1 ft lines) and −2 to 5 m (Australia, 0.5 m lines). It stretches automatically
   at big-tide places like Olympia, Broome or Derby so nothing gets cut off.
 
+**Below that** — next high and low tide, sunrise, sunset, moon phase, and the
+current water temperature.
+
 **Wind** — direction, speed and gusts for right now and the next three hours.
 Letters are the direction the wind is coming *from*; the arrow points the way
 it's blowing *to*. Miles per hour in the US, km/h in Australia.
-
-**Below that** — next high and low tide, sunrise, sunset, moon phase, and the
-current water temperature.
 
 **Places** — a favourites dropdown, a search box, and a date picker for any past
 or future day. Tide predictions are astronomical, so past and future dates are
