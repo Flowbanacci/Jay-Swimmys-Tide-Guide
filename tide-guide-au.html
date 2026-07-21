@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tide Guide — Australia</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #1c2733; padding: 14px; min-height: 100vh;
+    background: linear-gradient(180deg, #2e5f74 0%, #1f4a5e 55%, #16394b 100%);
+    background-image:
+      url("https://images.unsplash.com/photo-1562742263-531a89b31c78?fm=jpg&q=55&w=1400&fit=max"),
+      linear-gradient(180deg, #2e5f74 0%, #1f4a5e 55%, #16394b 100%);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; }
+  .panel {
+    background: rgba(255,255,255,0.93);
+    border: 1px solid rgba(255,255,255,0.6);
+    border-radius: 12px; padding: 10px; margin-bottom: 10px;
+    box-shadow: 0 2px 10px rgba(30,40,60,0.18);
+  }
+  header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+  h1 { font-size: 17px; font-weight: 700; flex: 1 1 auto; }
+  h1 small { display: block; font-size: 12px; font-weight: 400; color: #5b6b7b; }
+  select, input[type=text], input[type=date] {
+    font-size: 14px; padding: 7px 9px; border: 1px solid #c6d2dd; border-radius: 8px; background: #fff;
+  }
+  select { max-width: 100%; }
+  .searchrow { position: relative; display: flex; gap: 6px; flex: 1 1 100%; }
+  .searchrow input { flex: 1; }
+  .daterow { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  #results {
+    position: absolute; top: 38px; left: 0; right: 0; z-index: 10;
+    background: #fff; border: 1px solid #c6d2dd; border-radius: 8px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.12); overflow: hidden; display: none;
+  }
+  #results div { padding: 8px 10px; font-size: 13px; cursor: pointer; border-bottom: 1px solid #eef2f6; }
+  #results div:hover { background: #eaf3fb; }
+  .card {
+    background: #fff; border: 1px solid #dde5ec; border-radius: 12px; padding: 8px;
+    box-shadow: 0 2px 10px rgba(30,40,60,0.18);
+  }
+  svg { display: block; width: 100%; height: auto; }
+  #footerinfo { font-size: 14.5px; line-height: 1.75; padding: 2px 6px; }
+  #footerinfo b { font-weight: 600; }
+  .err { color: #a33; padding: 14px 6px; font-size: 14px; }
+  .muted { color: #5b6b7b; font-size: 11.5px; margin-top: 8px; text-align: center; }
+  button.fav {
+    font-size: 13px; padding: 7px 10px; border: 1px solid #c6d2dd; border-radius: 8px;
+    background: #fff; cursor: pointer; white-space: nowrap;
+  }
+  button.fav:active { background: #eaf3fb; }
+  #windinfo { margin-top: 10px; padding-top: 8px; border-top: 1px solid #e9eff4; }
+  .windhdr { font-size: 14.5px; font-weight: 600; margin-bottom: 6px; }
+  .windhdr small { font-weight: 400; color: #5b6b7b; font-size: 12px; }
+  .windgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .windcell {
+    background: #f4f8fb; border: 1px solid #e2eaf1; border-radius: 8px;
+    padding: 6px 4px; text-align: center; line-height: 1.35;
+  }
+  .windcell .wt { font-size: 11px; color: #5b6b7b; }
+  .windcell .wd { font-size: 15px; font-weight: 600; }
+  .windcell .ws { font-size: 13px; }
+  .windcell .wg { font-size: 11px; color: #5b6b7b; }
+  .windnote { font-size: 12px; color: #5b6b7b; padding: 2px 0; }
+  .tipbar {
+    margin-top: 12px; padding-top: 10px; border-top: 1px solid #e3eaf1;
+    display: flex; align-items: center; justify-content: center;
+    gap: 8px; flex-wrap: wrap;
+  }
+  .tipbar span { font-size: 13.5px; color: #3c4a59; }
+  a.tip {
+    font-size: 13px; padding: 6px 12px; border: 1px solid #c6d2dd; border-radius: 8px;
+    background: #fff; color: #16589e; text-decoration: none; font-weight: 600;
+    white-space: nowrap; -webkit-tap-highlight-color: rgba(0,0,0,.06);
+  }
+  a.tip:active { background: #eaf3fb; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="panel">
+  <header>
+    <h1 id="title">Tide Guide<small id="subtitle">loading…</small></h1>
+    <select id="favsel" aria-label="Favourite locations"></select>
+    <div class="searchrow">
+      <input type="text" id="q" placeholder="Search any Australian coastal town…" autocomplete="off">
+      <button class="fav" id="savefav" title="Save current spot to favourites">☆ Save</button>
+      <div id="results"></div>
+    </div>
+  </header>
+  <div class="daterow">
+    <button class="fav" id="prevday" title="Previous day">‹</button>
+    <input type="date" id="datepick" aria-label="Choose date">
+    <button class="fav" id="nextday" title="Next day">›</button>
+    <button class="fav" id="todaybtn">Today</button>
+  </div>
+  </div>
+  <div class="card"><div id="chart"><div class="err">Loading tide data…</div></div></div>
+  <div class="panel" style="margin-top:10px">
+    <div id="footerinfo"></div>
+    <div id="windinfo"></div>
+    <div class="muted">Tide curve: Open-Meteo marine model (metres vs mean sea level, local time). Model estimate — good for planning, not navigation. Sun &amp; moon computed for location.<br>Frame photo: NOAA / Unsplash (public domain)</div>
+    <div class="tipbar">
+      <span>Buy me a coffee 🍻</span>
+      <a class="tip" href="https://www.paypal.com/paypalme/jdaddyo" rel="noopener">PayPal</a>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ---------- state ---------- */
+const DEFAULT_FAVS = [
+  { name: "Byron Bay, NSW",        lat: -28.6450, lon: 153.6150 },
+  { name: "Brunswick Heads, NSW",  lat: -28.5400, lon: 153.5600 },
+  { name: "Lennox Head, NSW",      lat: -28.7930, lon: 153.6000 },
+  { name: "Ballina, NSW",          lat: -28.8700, lon: 153.6000 },
+  { name: "Gold Coast, QLD",       lat: -28.0023, lon: 153.4300 }
+];
+let favs = loadLS("au_favs1", DEFAULT_FAVS);
+let spot = loadLS("au_spot", DEFAULT_FAVS[0]);
+let viewDay = null;              // "YYYY-MM-DD" at the spot; null = today there
+let followToday = true;
+let series = [], extrema = [], loadedDay = "", locOffsetSec = null;
+let sst = null;                  // current water temp °C or "none"
+
+function loadLS(k, fallback) {
+  try { const v = JSON.parse(localStorage.getItem(k)); return v || fallback; }
+  catch (e) { return fallback; }
+}
+function saveLS(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+
+/* ---------- "wall clock at the spot" helpers ----------
+   All times are naive local wall times, stored as UTC-based ms so device
+   timezone never interferes. */
+function wallMs(y, mo, d, H, M) { return Date.UTC(y, mo - 1, d, H || 0, M || 0); }
+function parseISO(t) { // "2026-07-20T05:00"
+  const m = t.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  return wallMs(+m[1], +m[2], +m[3], +m[4], +m[5]);
+}
+function nowWall() { return Date.now() + (locOffsetSec || 0) * 1000; }
+function dayOf(ms) { const d = new Date(ms); return d.toISOString().slice(0, 10); }
+function fmtTime(ms) {
+  const d = new Date(ms);
+  let h = d.getUTCHours(), m = d.getUTCMinutes(), ap = h >= 12 ? "pm" : "am";
+  h = h % 12 || 12;
+  return h + ":" + String(m).padStart(2, "0") + " " + ap;
+}
+function fmtDay(dayStr) {
+  const d = new Date(dayStr + "T12:00:00Z");
+  return d.toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+}
+function addDays(dayStr, n) {
+  const d = new Date(dayStr + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+/* ---------- data ---------- */
+async function fetchJSON(url) {
+  const r = await fetch(url);
+  const j = await r.json();
+  if (j && j.error) throw new Error(j.reason || "data service error");
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return j;
+}
+function marineURL(lat, lon, d1, d2) {
+  return "https://marine-api.open-meteo.com/v1/marine?latitude=" + lat + "&longitude=" + lon +
+    "&hourly=sea_level_height_msl&timezone=auto&start_date=" + d1 + "&end_date=" + d2;
+}
+function sstURL(lat, lon) {
+  return "https://marine-api.open-meteo.com/v1/marine?latitude=" + lat + "&longitude=" + lon +
+    "&current=sea_surface_temperature&temperature_unit=celsius&timezone=auto";
+}
+function geoURL(q) {
+  return "https://geocoding-api.open-meteo.com/v1/search?name=" + encodeURIComponent(q) + "&count=10&language=en&format=json";
+}
+
+async function loadAll() {
+  document.getElementById("subtitle").textContent = spot.name + " — loading…";
+  try {
+    // First pass may not know the spot's UTC offset yet; fetch once to learn it.
+    if (locOffsetSec === null || viewDay === null) {
+      const probe = await fetchJSON(sstURL(spot.lat, spot.lon));
+      locOffsetSec = probe.utc_offset_seconds || 0;
+      sst = probe.current && probe.current.sea_surface_temperature != null
+        ? +probe.current.sea_surface_temperature : "none";
+      if (viewDay === null) viewDay = dayOf(nowWall());
+    }
+    const d1 = addDays(viewDay, -1), d2 = addDays(viewDay, 1);
+    const j = await fetchJSON(marineURL(spot.lat, spot.lon, d1, d2));
+    locOffsetSec = j.utc_offset_seconds != null ? j.utc_offset_seconds : locOffsetSec;
+    const times = (j.hourly && j.hourly.time) || [];
+    const vals = (j.hourly && j.hourly.sea_level_height_msl) || [];
+    series = [];
+    for (let i = 0; i < times.length; i++) {
+      if (vals[i] !== null && vals[i] !== undefined) series.push({ ms: parseISO(times[i]), v: +vals[i] });
+    }
+    if (series.length < 8) throw new Error("no marine data at this exact point — try searching a spot slightly offshore or a nearby beach");
+    findExtrema();
+    loadedDay = viewDay;
+    render();
+    refreshSST(); // async update of water temp
+    loadWind(spot.lat, spot.lon);
+  } catch (e) {
+    series = []; extrema = [];
+    loadedDay = viewDay || "";
+    document.getElementById("chart").innerHTML =
+      '<div class="err"><b>No tide data for this date or spot.</b><br>' + e.message +
+      '<br><span style="color:#5b6b7b">The model covers roughly the last 3 months through 2 weeks ahead.</span><br><br>' +
+      '<button class="fav" onclick="loadAll()">↻ Retry</button></div>';
+    document.getElementById("subtitle").textContent = spot.name + (viewDay ? " — " + fmtDay(viewDay) : "");
+    drawFooter();
+  }
+}
+
+async function refreshSST() {
+  try {
+    const p = await fetchJSON(sstURL(spot.lat, spot.lon));
+    sst = p.current && p.current.sea_surface_temperature != null
+      ? +p.current.sea_surface_temperature : "none";
+  } catch (e) { sst = "none"; }
+  drawFooter();
+}
+
+/* local extrema from hourly series, refined with a parabola fit */
+function findExtrema() {
+  extrema = [];
+  for (let i = 1; i < series.length - 1; i++) {
+    const a = series[i - 1].v, b = series[i].v, c = series[i + 1].v;
+    const isHigh = b >= a && b > c, isLow = b <= a && b < c;
+    if (!isHigh && !isLow) continue;
+    const denom = a - 2 * b + c;
+    let frac = 0, vPeak = b;
+    if (Math.abs(denom) > 1e-9) {
+      frac = 0.5 * (a - c) / denom;
+      frac = Math.max(-1, Math.min(1, frac));
+      vPeak = b - 0.25 * (a - c) * frac;
+    }
+    extrema.push({ ms: series[i].ms + frac * 3600e3, v: vPeak, type: isHigh ? "H" : "L" });
+  }
+}
+
+/* Catmull-Rom smoothing for the tide path */
+function smoothPath(pts, X, Y) {
+  if (pts.length < 3) return pts.map((p, i) => (i ? "L" : "M") + X(p.h) + " " + Y(p.v)).join("");
+  let d = "M" + X(pts[0].h).toFixed(1) + " " + Y(pts[0].v).toFixed(1);
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(pts.length - 1, i + 2)];
+    const c1x = X(p1.h + (p2.h - p0.h) / 6), c1y = Y(p1.v + (p2.v - p0.v) / 6);
+    const c2x = X(p2.h - (p3.h - p1.h) / 6), c2y = Y(p2.v - (p3.v - p1.v) / 6);
+    d += "C" + c1x.toFixed(1) + " " + c1y.toFixed(1) + " " + c2x.toFixed(1) + " " + c2y.toFixed(1) + " " + X(p2.h).toFixed(1) + " " + Y(p2.v).toFixed(1);
+  }
+  return d;
+}
+
+function render() {
+  if (!series.length) return;
+  const dayStart = wallMs(+loadedDay.slice(0, 4), +loadedDay.slice(5, 7), +loadedDay.slice(8, 10));
+  const pts = series
+    .map(p => ({ h: (p.ms - dayStart) / 3600e3, v: p.v }))
+    .filter(p => p.h >= -1 && p.h <= 25);
+  const dayPts = pts.filter(p => p.h >= 0 && p.h <= 24);
+  if (!dayPts.length) return;
+
+  const W = 720, H = 380, ML = 48, MR = 14, MT = 16, MB = 34;
+  const PW = W - ML - MR, PH = H - MT - MB;
+  const vals = dayPts.map(p => p.v);
+  /* Fixed axis: -2.0 to 5.0 m in 0.5 m steps, so the chart reads the same every
+     day. Only stretches if a tide would otherwise be clipped off the chart
+     (the big-tide north-west: Broome ~6.5 m, Derby ~7.5 m). */
+  const AXIS_MIN = -2, AXIS_MAX = 5, ystep = 0.5;
+  const rawMin = Math.min(...vals) - 0.15, rawMax = Math.max(...vals) + 0.15;
+  const ymin = Math.min(AXIS_MIN, Math.floor(rawMin / ystep) * ystep);
+  const ymax = Math.max(AXIS_MAX, Math.ceil(rawMax / ystep) * ystep);
+  const X = h => ML + Math.max(0, Math.min(24, h)) / 24 * PW;
+  const Y = v => MT + (ymax - v) / (ymax - ymin) * PH;
+
+  let s = '<svg viewBox="0 0 ' + W + " " + H + '" xmlns="http://www.w3.org/2000/svg">';
+  s += '<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">' +
+       '<stop offset="0%" stop-color="#4a90c4" stop-opacity="0.75"/>' +
+       '<stop offset="100%" stop-color="#4a90c4" stop-opacity="0.25"/></linearGradient></defs>';
+  for (let v = ymin; v <= ymax + 1e-9; v += ystep) {
+    const major = Math.abs(v - Math.round(v)) < 1e-9;   // whole metres drawn darker
+    s += '<line x1="' + ML + '" y1="' + Y(v) + '" x2="' + (W - MR) + '" y2="' + Y(v) + '" stroke="' + (major ? "#d3dee8" : "#e7edf3") + '" stroke-width="1"/>';
+    s += '<text x="' + (ML - 7) + '" y="' + (Y(v) + 4) + '" font-size="11" fill="#5b6b7b" text-anchor="end">' + parseFloat(v.toFixed(2)) + "m</text>";
+  }
+  for (let h = 0; h <= 24; h += 2) {
+    const lbl = (h % 24 === 0) ? "12am" : (h === 12 ? "12pm" : String(h % 12));
+    s += '<line x1="' + X(h) + '" y1="' + MT + '" x2="' + X(h) + '" y2="' + (H - MB) + '" stroke="#dbe4ec" stroke-width="1"/>';
+    s += '<text x="' + X(h) + '" y="' + (H - MB + 18) + '" font-size="12" fill="#5b6b7b" text-anchor="middle">' + lbl + "</text>";
+  }
+  if (ymin < 0.3 && 0.3 < ymax) {
+    s += '<line x1="' + ML + '" y1="' + Y(0.3) + '" x2="' + (W - MR) + '" y2="' + Y(0.3) + '" stroke="#e67e22" stroke-width="1.5" stroke-dasharray="6 4"/>';
+    s += '<text x="' + (W - MR - 4) + '" y="' + (Y(0.3) - 5) + '" font-size="11" font-weight="600" fill="#e67e22" text-anchor="end">0.3m</text>';
+  }
+  const clamped = dayPts.map(p => p);
+  let area = "M" + X(clamped[0].h) + " " + Y(ymin) + "L" + clamped.map(p => X(p.h).toFixed(1) + " " + Y(p.v).toFixed(1)).join("L") + "L" + X(clamped[clamped.length - 1].h) + " " + Y(ymin) + "Z";
+  s += '<path d="' + area + '" fill="url(#g)"/>';
+  s += '<path d="' + smoothPath(clamped, X, Y) + '" fill="none" stroke="#2c6ea0" stroke-width="2.5"/>';
+
+  extrema.filter(p => dayOf(p.ms) === loadedDay).forEach(p => {
+    const h = (p.ms - dayStart) / 3600e3, above = p.type === "H";
+    s += '<circle cx="' + X(h) + '" cy="' + Y(p.v) + '" r="3.5" fill="#2c6ea0"/>';
+    s += '<text x="' + X(h) + '" y="' + (Y(p.v) + (above ? -20 : 16)) + '" font-size="12" font-weight="600" fill="#1c2733" text-anchor="middle">' + p.v.toFixed(2) + "m</text>";
+    s += '<text x="' + X(h) + '" y="' + (Y(p.v) + (above ? -8 : 28)) + '" font-size="11" fill="#5b6b7b" text-anchor="middle">' + fmtTime(p.ms) + "</text>";
+  });
+
+  const nw = nowWall();
+  if (dayOf(nw) === loadedDay) {
+    const nh = (nw - dayStart) / 3600e3;
+    let nv = null;
+    for (let i = 0; i < pts.length - 1; i++) {
+      if (pts[i].h <= nh && nh <= pts[i + 1].h) {
+        const f = (nh - pts[i].h) / (pts[i + 1].h - pts[i].h || 1);
+        nv = pts[i].v + f * (pts[i + 1].v - pts[i].v); break;
+      }
+    }
+    s += '<line x1="' + X(nh) + '" y1="' + MT + '" x2="' + X(nh) + '" y2="' + (H - MB) + '" stroke="#d63031" stroke-width="2.5"/>';
+    if (nv !== null) {
+      s += '<circle cx="' + X(nh) + '" cy="' + Y(nv) + '" r="5" fill="#d63031" stroke="#fff" stroke-width="1.5"/>';
+      s += '<text x="' + (X(nh) + (nh > 20 ? -8 : 8)) + '" y="' + (MT + 14) + '" font-size="12.5" font-weight="700" fill="#d63031" text-anchor="' + (nh > 20 ? "end" : "start") + '">Now ' + nv.toFixed(2) + "m</text>";
+    }
+  }
+  s += "</svg>";
+  document.getElementById("chart").innerHTML = s;
+
+  document.getElementById("title").childNodes[0].textContent = spot.name;
+  document.getElementById("subtitle").textContent = fmtDay(loadedDay) + (dayOf(nw) === loadedDay ? " (today)" : "");
+  document.getElementById("datepick").value = loadedDay;
+  drawFooter();
+}
+
+
+/* ---------- wind (Open-Meteo forecast: free, no key, ~15-min updates) ----------
+   Wind now plus the next three hourly steps. Compass letters = the direction the
+   wind blows FROM (standard convention); the arrow points the way it is blowing
+   TO. Gusts shown as "g<number>". */
+const WIND_UNIT = "kmh";
+const WIND_LABEL = "km/h";
+let windInfo = null;          // null = loading, "none" = failed, else array of rows
+function windURL(lat, lon) {
+  return "https://api.open-meteo.com/v1/forecast?latitude=" + lat + "&longitude=" + lon +
+    "&current=wind_speed_10m,wind_direction_10m,wind_gusts_10m" +
+    "&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m" +
+    "&wind_speed_unit=" + WIND_UNIT + "&forecast_days=2&timezone=auto";
+}
+function compassFrom(deg) {
+  const pts = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+  return pts[Math.round((((deg % 360) + 360) % 360) / 22.5) % 16];
+}
+function blowArrow(deg) {
+  const arrows = ["\u2191","\u2197","\u2192","\u2198","\u2193","\u2199","\u2190","\u2196"];
+  return arrows[Math.round(((((deg + 180) % 360) + 360) % 360) / 45) % 8];
+}
+function hourLabel(iso) {
+  const h = +iso.slice(11, 13);
+  const ampm = h < 12 ? "AM" : "PM";
+  const h12 = (h % 12 === 0) ? 12 : (h % 12);
+  return h12 + " " + ampm;
+}
+async function loadWind(lat, lon) {
+  windInfo = null; drawWind();
+  try {
+    const d = await fetchJSON(windURL(lat, lon));
+    const cur = d.current, H = d.hourly;
+    if (!cur || !H || !H.time) throw new Error("no wind data");
+    const rows = [{
+      when: "Now", at: hourLabel(cur.time),
+      spd: cur.wind_speed_10m, dir: cur.wind_direction_10m, gust: cur.wind_gusts_10m
+    }];
+    let i = H.time.indexOf(cur.time.slice(0, 13) + ":00");
+    if (i < 0) i = H.time.findIndex(t => t >= cur.time);
+    for (let n = 1; n <= 3; n++) {
+      const k = i + n;
+      if (i < 0 || k >= H.time.length || H.wind_speed_10m[k] == null) continue;
+      rows.push({
+        when: "+" + n + "h", at: hourLabel(H.time[k]),
+        spd: H.wind_speed_10m[k], dir: H.wind_direction_10m[k], gust: H.wind_gusts_10m[k]
+      });
+    }
+    windInfo = rows;
+  } catch (e) {
+    windInfo = "none";
+  }
+  drawWind();
+}
+function drawWind() {
+  const el = document.getElementById("windinfo");
+  if (!el) return;
+  if (!(loadedDay && dayOf(nowWall()) === loadedDay)) {
+    el.innerHTML = '<div class="windnote">Wind is shown for today only.</div>';
+    return;
+  }
+  if (windInfo === null) {
+    el.innerHTML = '<div class="windhdr">Wind <small>loading\u2026</small></div>'; return;
+  }
+  if (windInfo === "none") {
+    el.innerHTML = '<div class="windhdr">Wind <small>unavailable right now</small></div>'; return;
+  }
+  let h = '<div class="windhdr">Wind <small>at 10 m \u00b7 ' + WIND_LABEL + ' \u00b7 g = gusts</small></div><div class="windgrid">';
+  h += windInfo.map(r =>
+    '<div class="windcell">' +
+      '<div class="wt">' + r.when + ' \u00b7 ' + r.at + '</div>' +
+      '<div class="wd">' + compassFrom(r.dir) + ' ' + blowArrow(r.dir) + '</div>' +
+      '<div class="ws">' + Math.round(r.spd) + '</div>' +
+      '<div class="wg">g' + Math.round(r.gust) + '</div>' +
+    '</div>').join("");
+  el.innerHTML = h + '</div>';
+}
+
+function drawFooter() {
+  const nw = nowWall();
+  let f = "";
+  const today = loadedDay && dayOf(nw) === loadedDay;
+  if (extrema.length) {
+    if (today) {
+      const nextL = extrema.find(p => p.type === "L" && p.ms > nw);
+      const nextH = extrema.find(p => p.type === "H" && p.ms > nw);
+      if (nextL) f += "<b>Next low tide:</b> " + nextL.v.toFixed(2) + " m at " + fmtTime(nextL.ms) + (dayOf(nextL.ms) !== loadedDay ? " (tomorrow)" : "") + "<br>";
+      if (nextH) f += "<b>Next high tide:</b> " + nextH.v.toFixed(2) + " m at " + fmtTime(nextH.ms) + (dayOf(nextH.ms) !== loadedDay ? " (tomorrow)" : "") + "<br>";
+    } else if (loadedDay) {
+      const lows = extrema.filter(p => dayOf(p.ms) === loadedDay && p.type === "L");
+      const highs = extrema.filter(p => dayOf(p.ms) === loadedDay && p.type === "H");
+      if (lows.length) f += "<b>Low tides:</b> " + lows.map(p => p.v.toFixed(2) + " m at " + fmtTime(p.ms)).join(" · ") + "<br>";
+      if (highs.length) f += "<b>High tides:</b> " + highs.map(p => p.v.toFixed(2) + " m at " + fmtTime(p.ms)).join(" · ") + "<br>";
+    }
+  }
+  if (loadedDay) {
+    const noonUTC = new Date(loadedDay + "T12:00:00Z");
+    const approxNoonUTCms = noonUTC.getTime() - (locOffsetSec || 0) * 1000;
+    const sun = sunTimes(new Date(approxNoonUTCms), spot.lat, spot.lon);
+    if (sun) f += "<b>Sunrise:</b> " + fmtTime(sun.sunrise.getTime() + (locOffsetSec || 0) * 1000) +
+      " &nbsp;·&nbsp; <b>Sunset:</b> " + fmtTime(sun.sunset.getTime() + (locOffsetSec || 0) * 1000) + "<br>";
+    f += "<b>Moon:</b> " + moonPhase(new Date(loadedDay + "T12:00:00Z")) + "<br>";
+  }
+  if (sst === null) f += "<b>Water temp:</b> …";
+  else if (sst === "none") f += "<b>Water temp:</b> unavailable for this spot";
+  else f += "<b>Water temp now:</b> " + sst.toFixed(1) + " °C <span style='color:#5b6b7b'>(model estimate for this spot)</span>";
+  document.getElementById("footerinfo").innerHTML = f;
+  drawWind();
+}
+
+/* ---------- sun (SunCalc-style) ---------- */
+const RAD = Math.PI / 180, DAYMS = 864e5, J1970 = 2440588, J2000 = 2451545, EOBL = RAD * 23.4397;
+function sunTimes(date, lat, lng) {
+  const toDays = d => d.valueOf() / DAYMS - 0.5 + J1970 - J2000;
+  const fromJ = j => new Date((j + 0.5 - J1970) * DAYMS);
+  const lw = RAD * -lng, phi = RAD * lat, d = toDays(date);
+  const n = Math.round(d - 0.0009 - lw / (2 * Math.PI));
+  const approx = (Ht) => 0.0009 + (Ht + lw) / (2 * Math.PI) + n;
+  const ds = approx(0);
+  const M = RAD * (357.5291 + 0.98560028 * ds);
+  const L = M + RAD * (1.9148 * Math.sin(M) + 0.02 * Math.sin(2 * M) + 0.0003 * Math.sin(3 * M)) + RAD * 102.9372 + Math.PI;
+  const dec = Math.asin(Math.sin(L) * Math.sin(EOBL));
+  const transitJ = ds2 => J2000 + ds2 + 0.0053 * Math.sin(M) - 0.0069 * Math.sin(2 * L);
+  const Jnoon = transitJ(ds);
+  const cosw = (Math.sin(RAD * -0.833) - Math.sin(phi) * Math.sin(dec)) / (Math.cos(phi) * Math.cos(dec));
+  if (cosw < -1 || cosw > 1) return null;
+  const w = Math.acos(cosw);
+  const Jset = transitJ(approx(w));
+  return { sunrise: fromJ(Jnoon - (Jset - Jnoon)), sunset: fromJ(Jset) };
+}
+function moonPhase(date) {
+  const SYN = 29.530588853;
+  let age = ((date.valueOf() - Date.UTC(2000, 0, 6, 18, 14)) / DAYMS) % SYN;
+  if (age < 0) age += SYN;
+  const names = ["New Moon 🌑", "Waxing Crescent 🌒", "First Quarter 🌓", "Waxing Gibbous 🌔",
+                 "Full Moon 🌕", "Waning Gibbous 🌖", "Last Quarter 🌗", "Waning Crescent 🌘"];
+  const idx = Math.round(age / SYN * 8) % 8;
+  const illum = Math.round((1 - Math.cos(2 * Math.PI * age / SYN)) / 2 * 100);
+  return names[idx] + " (" + illum + "% lit)";
+}
+
+/* ---------- date navigation ---------- */
+function goToDay(dayStr) {
+  viewDay = dayStr;
+  followToday = (locOffsetSec !== null) && dayOf(nowWall()) === dayStr;
+  loadAll();
+}
+document.getElementById("prevday").addEventListener("click", () => goToDay(addDays(viewDay || loadedDay, -1)));
+document.getElementById("nextday").addEventListener("click", () => goToDay(addDays(viewDay || loadedDay, 1)));
+document.getElementById("todaybtn").addEventListener("click", () => { viewDay = null; followToday = true; loadAll(); });
+document.getElementById("datepick").addEventListener("change", e => {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) goToDay(e.target.value);
+});
+
+/* ---------- favourites & search ---------- */
+function drawFavs() {
+  const sel = document.getElementById("favsel");
+  sel.innerHTML = favs.map((f, i) =>
+    '<option value="' + i + '"' + (f.name === spot.name ? " selected" : "") + ">" + f.name + "</option>").join("");
+  if (!favs.some(f => f.name === spot.name)) {
+    sel.insertAdjacentHTML("afterbegin", '<option value="-1" selected>' + spot.name + "</option>");
+  }
+}
+document.getElementById("favsel").addEventListener("change", e => {
+  const f = favs[+e.target.value];
+  if (f) { spot = f; locOffsetSec = null; viewDay = followToday ? null : viewDay; saveLS("au_spot", spot); loadAll(); }
+});
+document.getElementById("savefav").addEventListener("click", () => {
+  if (!favs.some(f => f.name === spot.name)) {
+    favs.push({ ...spot }); saveLS("au_favs1", favs); drawFavs();
+  }
+});
+let debounce = null;
+document.getElementById("q").addEventListener("input", e => {
+  clearTimeout(debounce);
+  const q = e.target.value.trim();
+  const box = document.getElementById("results");
+  if (q.length < 3) { box.style.display = "none"; return; }
+  debounce = setTimeout(async () => {
+    try {
+      const data = await fetchJSON(geoURL(q));
+      const list = ((data.results || []).filter(r => r.country_code === "AU")).slice(0, 8);
+      box.innerHTML = list.length
+        ? list.map((r, i) => '<div data-i="' + i + '">' + r.name + (r.admin1 ? ", " + r.admin1 : "") + "</div>").join("")
+        : "<div>No Australian places found</div>";
+      box.style.display = "block";
+      box.querySelectorAll("div[data-i]").forEach(el => el.addEventListener("click", () => {
+        const r = list[+el.dataset.i];
+        spot = { name: r.name + (r.admin1 ? ", " + shortState(r.admin1) : ""), lat: +r.latitude, lon: +r.longitude };
+        locOffsetSec = null; viewDay = followToday ? null : viewDay;
+        saveLS("au_spot", spot);
+        box.style.display = "none";
+        document.getElementById("q").value = "";
+        drawFavs(); loadAll();
+      }));
+    } catch (err) { box.innerHTML = "<div>Search failed — try again</div>"; box.style.display = "block"; }
+  }, 450);
+});
+function shortState(s) {
+  const m = { "New South Wales": "NSW", "Queensland": "QLD", "Victoria": "VIC", "Tasmania": "TAS",
+    "South Australia": "SA", "Western Australia": "WA", "Northern Territory": "NT",
+    "Australian Capital Territory": "ACT" };
+  return m[s] || s;
+}
+document.addEventListener("click", e => {
+  if (!e.target.closest(".searchrow")) document.getElementById("results").style.display = "none";
+});
+
+/* ---------- keep the red line current ---------- */
+setInterval(() => {
+  if (!series.length || locOffsetSec === null) return;
+  if (followToday && dayOf(nowWall()) !== loadedDay) { viewDay = null; loadAll(); }
+  else if (dayOf(nowWall()) === loadedDay) render();
+}, 60000);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && followToday && loadedDay && locOffsetSec !== null && dayOf(nowWall()) !== loadedDay) {
+    viewDay = null; loadAll();
+  }
+});
+
+drawFavs();
+loadAll();
+</script>
+</body>
+</html>
