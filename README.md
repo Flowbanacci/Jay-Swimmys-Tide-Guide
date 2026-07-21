@@ -7,6 +7,7 @@ A simple, interactive web-based tide prediction tool for NOAA tide stations with
 - **Live Tide Predictions**: View detailed tide predictions for any NOAA monitoring station
 - **Water Temperature**: Current water temperature from multiple sources (station sensors, satellite data, or nearby sensors)
 - **Sun & Moon Info**: Sunrise/sunset times and current moon phase for your location
+- **Wind Speed and Direction**: Prevailing wind speed with arrow/cardinal direction
 - **Interactive Charting**: Beautiful SVG tide charts with high/low tide markers
 - **Favorites**: Save your preferred tide stations for quick access
 - **Date Navigation**: View tides for any date with easy navigation
