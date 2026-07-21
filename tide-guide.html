@@ -62,6 +62,31 @@
     background: #fff; cursor: pointer; white-space: nowrap;
   }
   button.fav:active { background: #eaf3fb; }
+  #windinfo { margin-top: 10px; padding-top: 8px; border-top: 1px solid #e9eff4; }
+  .windhdr { font-size: 14.5px; font-weight: 600; margin-bottom: 6px; }
+  .windhdr small { font-weight: 400; color: #5b6b7b; font-size: 12px; }
+  .windgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .windcell {
+    background: #f4f8fb; border: 1px solid #e2eaf1; border-radius: 8px;
+    padding: 6px 4px; text-align: center; line-height: 1.35;
+  }
+  .windcell .wt { font-size: 11px; color: #5b6b7b; }
+  .windcell .wd { font-size: 15px; font-weight: 600; }
+  .windcell .ws { font-size: 13px; }
+  .windcell .wg { font-size: 11px; color: #5b6b7b; }
+  .windnote { font-size: 12px; color: #5b6b7b; padding: 2px 0; }
+  .tipbar {
+    margin-top: 12px; padding-top: 10px; border-top: 1px solid #e3eaf1;
+    display: flex; align-items: center; justify-content: center;
+    gap: 8px; flex-wrap: wrap;
+  }
+  .tipbar span { font-size: 13.5px; color: #3c4a59; }
+  a.tip {
+    font-size: 13px; padding: 6px 12px; border: 1px solid #c6d2dd; border-radius: 8px;
+    background: #fff; color: #16589e; text-decoration: none; font-weight: 600;
+    white-space: nowrap; -webkit-tap-highlight-color: rgba(0,0,0,.06);
+  }
+  a.tip:active { background: #eaf3fb; }
 </style>
 </head>
 <body>
@@ -86,7 +111,13 @@
   <div class="card"><div id="chart"><div class="err">Loading tide data…</div></div></div>
   <div class="panel" style="margin-top:10px">
     <div id="footerinfo"></div>
+    <div id="windinfo"></div>
     <div class="muted">Data: NOAA CO-OPS predictions (MLLW, feet, station local time). Sun &amp; moon computed for station location.<br>Frame photo: NOAA / Unsplash (public domain)</div>
+    <div class="tipbar">
+      <span>Buy me a coffee 🍻</span>
+      <a class="tip" href="https://venmo.com/u/Jay-Darling-4" rel="noopener">Venmo</a>
+      <a class="tip" href="https://www.paypal.com/paypalme/jdaddyo" rel="noopener">PayPal</a>
+    </div>
   </div>
 </div>
 
@@ -286,6 +317,7 @@ async function loadAll() {
     if (!curve.length) throw new Error("no plottable tide points for this date");
     render();
     loadTemp(); // async; updates footer when it arrives
+    loadWind(station.lat, station.lon);
   } catch (e) {
     hilo = []; curve = [];
     document.getElementById("chart").innerHTML =
@@ -297,6 +329,7 @@ async function loadAll() {
       station.name + " — " + viewDate.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
     drawFooter();  // sunrise/sunset/moon still work — they're computed locally
     loadTemp();    // water temp may still work — different NOAA system + satellite
+    loadWind(station.lat, station.lon);  // separate source — works during NOAA outages
   }
 }
 
@@ -322,16 +355,21 @@ function render() {
   const W = 720, H = 380, ML = 44, MR = 14, MT = 16, MB = 34;
   const PW = W - ML - MR, PH = H - MT - MB;
   const vals = curve.map(p => p.v);
-  const ymin = Math.floor(Math.min(...vals) - 0.8), ymax = Math.ceil(Math.max(...vals) + 0.8);
+  /* Fixed axis: -3 to 10 ft in 1 ft steps, so the chart reads the same every day.
+     Only stretches if a tide would otherwise be clipped off the chart
+     (e.g. Tacoma ~12 ft, Olympia ~15 ft). */
+  const AXIS_MIN = -3, AXIS_MAX = 10, AXIS_STEP = 1;
+  const ymin = Math.min(AXIS_MIN, Math.floor(Math.min(...vals) - 0.5));
+  const ymax = Math.max(AXIS_MAX, Math.ceil(Math.max(...vals) + 0.5));
   const X = h => ML + h / 24 * PW;
   const Y = v => MT + (ymax - v) / (ymax - ymin) * PH;
   let s = '<svg viewBox="0 0 ' + W + " " + H + '" xmlns="http://www.w3.org/2000/svg">';
   s += '<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">' +
        '<stop offset="0%" stop-color="#4a90c4" stop-opacity="0.75"/>' +
        '<stop offset="100%" stop-color="#4a90c4" stop-opacity="0.25"/></linearGradient></defs>';
-  // horizontal grid + left labels (feet) — every 2 ft
-  for (let v = Math.ceil(ymin / 2) * 2; v <= ymax; v += 2) {
-    s += '<line x1="' + ML + '" y1="' + Y(v) + '" x2="' + (W - MR) + '" y2="' + Y(v) + '" stroke="#dbe4ec" stroke-width="1"/>';
+  // horizontal grid + left labels (feet) — every 1 ft, 0 ft emphasised
+  for (let v = Math.ceil(ymin / AXIS_STEP) * AXIS_STEP; v <= ymax; v += AXIS_STEP) {
+    s += '<line x1="' + ML + '" y1="' + Y(v) + '" x2="' + (W - MR) + '" y2="' + Y(v) + '" stroke="' + (v === 0 ? "#b9c8d6" : "#dbe4ec") + '" stroke-width="1"/>';
     s += '<text x="' + (ML - 7) + '" y="' + (Y(v) + 4) + '" font-size="12" fill="#5b6b7b" text-anchor="end">' + v + "'</text>";
   }
   // 1-ft swim reference line (dashed orange)
@@ -391,6 +429,84 @@ function render() {
   drawFooter();
 }
 
+
+/* ---------- wind (Open-Meteo forecast: free, no key, ~15-min updates) ----------
+   Wind now plus the next three hourly steps. Compass letters = the direction the
+   wind blows FROM (standard convention); the arrow points the way it is blowing
+   TO. Gusts shown as "g<number>". */
+const WIND_UNIT = "mph";
+const WIND_LABEL = "mph";
+let windInfo = null;          // null = loading, "none" = failed, else array of rows
+function windURL(lat, lon) {
+  return "https://api.open-meteo.com/v1/forecast?latitude=" + lat + "&longitude=" + lon +
+    "&current=wind_speed_10m,wind_direction_10m,wind_gusts_10m" +
+    "&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m" +
+    "&wind_speed_unit=" + WIND_UNIT + "&forecast_days=2&timezone=auto";
+}
+function compassFrom(deg) {
+  const pts = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+  return pts[Math.round((((deg % 360) + 360) % 360) / 22.5) % 16];
+}
+function blowArrow(deg) {
+  const arrows = ["\u2191","\u2197","\u2192","\u2198","\u2193","\u2199","\u2190","\u2196"];
+  return arrows[Math.round(((((deg + 180) % 360) + 360) % 360) / 45) % 8];
+}
+function hourLabel(iso) {
+  const h = +iso.slice(11, 13);
+  const ampm = h < 12 ? "AM" : "PM";
+  const h12 = (h % 12 === 0) ? 12 : (h % 12);
+  return h12 + " " + ampm;
+}
+async function loadWind(lat, lon) {
+  windInfo = null; drawWind();
+  try {
+    const d = await fetchJSON(windURL(lat, lon));
+    const cur = d.current, H = d.hourly;
+    if (!cur || !H || !H.time) throw new Error("no wind data");
+    const rows = [{
+      when: "Now", at: hourLabel(cur.time),
+      spd: cur.wind_speed_10m, dir: cur.wind_direction_10m, gust: cur.wind_gusts_10m
+    }];
+    let i = H.time.indexOf(cur.time.slice(0, 13) + ":00");
+    if (i < 0) i = H.time.findIndex(t => t >= cur.time);
+    for (let n = 1; n <= 3; n++) {
+      const k = i + n;
+      if (i < 0 || k >= H.time.length || H.wind_speed_10m[k] == null) continue;
+      rows.push({
+        when: "+" + n + "h", at: hourLabel(H.time[k]),
+        spd: H.wind_speed_10m[k], dir: H.wind_direction_10m[k], gust: H.wind_gusts_10m[k]
+      });
+    }
+    windInfo = rows;
+  } catch (e) {
+    windInfo = "none";
+  }
+  drawWind();
+}
+function drawWind() {
+  const el = document.getElementById("windinfo");
+  if (!el) return;
+  if (!(isViewingToday())) {
+    el.innerHTML = '<div class="windnote">Wind is shown for today only.</div>';
+    return;
+  }
+  if (windInfo === null) {
+    el.innerHTML = '<div class="windhdr">Wind <small>loading\u2026</small></div>'; return;
+  }
+  if (windInfo === "none") {
+    el.innerHTML = '<div class="windhdr">Wind <small>unavailable right now</small></div>'; return;
+  }
+  let h = '<div class="windhdr">Wind <small>at 10 m \u00b7 ' + WIND_LABEL + ' \u00b7 g = gusts</small></div><div class="windgrid">';
+  h += windInfo.map(r =>
+    '<div class="windcell">' +
+      '<div class="wt">' + r.when + ' \u00b7 ' + r.at + '</div>' +
+      '<div class="wd">' + compassFrom(r.dir) + ' ' + blowArrow(r.dir) + '</div>' +
+      '<div class="ws">' + Math.round(r.spd) + '</div>' +
+      '<div class="wg">g' + Math.round(r.gust) + '</div>' +
+    '</div>').join("");
+  el.innerHTML = h + '</div>';
+}
+
 function drawFooter() {
   const now = new Date();
   const dstr = loadedDateDash();
@@ -423,6 +539,7 @@ function drawFooter() {
     f += "<br><b>Closest NOAA sensor:</b> " + tempInfo2.v.toFixed(1) + " °F <span style='color:#5b6b7b'>(" + tempInfo2.at + ", ~" + tempInfo2.mi + " mi)</span>";
   }
   document.getElementById("footerinfo").innerHTML = f;
+  drawWind();
 }
 function loadedDateDash() {
   return loadedDate.slice(0, 4) + "-" + loadedDate.slice(4, 6) + "-" + loadedDate.slice(6, 8);
