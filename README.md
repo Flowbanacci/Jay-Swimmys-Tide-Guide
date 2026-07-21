@@ -11,10 +11,10 @@ Two versions:
 | `tide-guide.html` | United States | NOAA CO-OPS predictions |
 | `tide-guide-au.html` | Australia | Open-Meteo marine model |
 
-**Live links** *(replace `YOURNAME/YOURREPO` with your GitHub Pages address)*
+**Live links**
 
-- US — https://YOURNAME.github.io/YOURREPO/tide-guide.html
-- Australia — https://YOURNAME.github.io/YOURREPO/tide-guide-au.html
+- US — https://flowbanacci.github.io/Jay-Swimmys-Tide-Guide/tide-guide.html
+- Australia — https://flowbanacci.github.io/Jay-Swimmys-Tide-Guide/tide-guide-au.html
 
 No account, no install, no tracking. Each page is a single HTML file that fetches
 fresh data every time you open it.
